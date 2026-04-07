@@ -1,0 +1,33 @@
+{
+  "_instructions": "Copy this file to config.json and fill in your values. API keys should go in .env instead.",
+
+  "apify": {
+    "api_token": "FROM_ENV",
+    "actor_id": "harvestapi/linkedin-job-search",
+    "max_results_per_run": 200,
+    "posted_within_hours": 72
+  },
+
+  "notion": {
+    "token": "FROM_ENV",
+    "jobs_database_id": "FROM_ENV"
+  },
+
+  "discord": {
+    "webhook_url": "FROM_ENV",
+    "channel_name": "job-scout"
+  },
+
+  "schedule": {
+    "run_time_local": "08:00",
+    "timezone": "Australia/Melbourne"
+  },
+
+  "system": {
+    "strategy_file": "strategy.json",
+    "seen_jobs_file": "seen_jobs.json",
+    "pending_questions_file": "pending_questions.json",
+    "logs_dir": "logs/",
+    "output_docs_dir": "output_docs/"
+  }
+}

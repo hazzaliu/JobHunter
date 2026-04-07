@@ -1,0 +1,137 @@
+{
+  "meta": {
+    "created": "2026-01-01",
+    "last_updated": "2026-01-01",
+    "version": 1
+  },
+
+  "positioning_statement": "Describe your unique professional identity in 2-3 sentences. What makes you different? What intersection of skills do you bring?",
+
+  "target_titles": [
+    "Your Target Role 1",
+    "Your Target Role 2",
+    "Your Target Role 3 (stretch)"
+  ],
+
+  "target_functions": [
+    "Function area 1 (e.g. Product Strategy)",
+    "Function area 2 (e.g. Data Products)"
+  ],
+
+  "avoid_functions": [
+    "Functions you don't want (e.g. Pure operations)"
+  ],
+
+  "target_industries": [
+    "Industry 1 (e.g. HealthTech)",
+    "Industry 2 (e.g. FinTech)",
+    "Industry 3 (e.g. Enterprise SaaS)"
+  ],
+
+  "background_industries": [
+    "Industries you've worked in before"
+  ],
+
+  "avoid_industries": [
+    "Industries to skip (e.g. Consultancy)"
+  ],
+
+  "company_preferences": {
+    "type": "Describe your ideal company type",
+    "min_headcount": 50,
+    "preferred_stage": ["scaleup", "enterprise"],
+    "avoid_stage": ["pre-seed", "seed"],
+    "structure_preference": "Your preference for company structure",
+    "b2b_only": false
+  },
+
+  "culture_requirements": {
+    "must_have": [
+      "Culture requirement 1",
+      "Culture requirement 2"
+    ],
+    "walk_out_triggers": [
+      "Deal-breaker 1",
+      "Deal-breaker 2"
+    ],
+    "ideal_manager_profile": "Describe your ideal manager"
+  },
+
+  "salary": {
+    "floor_aud": 100000,
+    "target_aud": 130000,
+    "ideal_aud": 150000,
+    "note": "Adjust currency and values to your market",
+    "super_excluded": true
+  },
+
+  "work_preferences": {
+    "mode": "Hybrid / Remote / Office",
+    "travel": "Your travel preference",
+    "team_size": "Your team size preference"
+  },
+
+  "leadership_preference": {
+    "managing_up_vs_down": "Your preference",
+    "direct_reports": "Your preference for people management",
+    "influence_style": "How you prefer to lead"
+  },
+
+  "energisers": [
+    "What kind of work energises you",
+    "Another energiser"
+  ],
+
+  "drainers": [
+    "What drains you at work",
+    "Another drainer"
+  ],
+
+  "competitive_edge": {
+    "summary": "Your 1-sentence competitive advantage",
+    "key_differentiators": [
+      "Differentiator 1",
+      "Differentiator 2",
+      "Differentiator 3"
+    ],
+    "one_liner": "Your elevator pitch"
+  },
+
+  "selling_points": [
+    {
+      "name": "Project or achievement name",
+      "metric": "Quantified impact (e.g. 50% cost reduction)",
+      "story": "2-3 sentence story of what you did and why it mattered",
+      "when_to_use": "When this story is most relevant"
+    },
+    {
+      "name": "Another achievement",
+      "metric": "Another metric",
+      "story": "Another story",
+      "when_to_use": "When to use it"
+    }
+  ],
+
+  "known_gaps": [
+    {
+      "gap": "A gap in your experience",
+      "strategy": "How to frame or mitigate this gap in applications"
+    }
+  ],
+
+  "search_configuration": {
+    "location": "Your City, State, Country",
+    "search_terms": [
+      "Your Target Role 1",
+      "Your Target Role 2",
+      "Related Role 1",
+      "Related Role 2"
+    ],
+    "years_experience": 4,
+    "fit_score_threshold": 30,
+    "max_results_per_run": 200,
+    "deep_analysis_count": 5
+  },
+
+  "feedback_log": []
+}

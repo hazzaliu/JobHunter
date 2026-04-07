@@ -1,0 +1,41 @@
+# Personal data — never commit
+.env
+strategy.json
+seen_jobs.json
+pending_questions.json
+
+# Private documents
+private_docs/
+
+# Cached models and embeddings
+embeddings/
+
+# Run logs
+logs/
+
+# Generated documents
+output_docs/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Notion/Discord secrets
+config.json
