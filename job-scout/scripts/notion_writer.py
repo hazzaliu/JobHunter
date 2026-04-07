@@ -68,7 +68,7 @@ def format_interview_questions(questions):
     return "\n".join(lines)
 
 
-def write_job_to_notion(client, database_id, scored_job, research=None, near_relevant=False):
+def write_job_to_notion(client, database_id, scored_job, research=None, near_relevant=False, application_answers=None, tailored_cv=None):
     """
     Creates a new Notion page for a single job entry.
     scored_job: output from scorer.py
@@ -185,15 +185,38 @@ def write_job_to_notion(client, database_id, scored_job, research=None, near_rel
 
         # Hiring manager
         hm = research.get("hiring_manager")
-        if hm and hm.get("name"):
-            children.append(create_heading_block("Hiring Manager", 2))
-            hm_text = (
-                f"Name: {hm.get('name', 'N/A')}\n"
-                f"Title: {hm.get('title', 'N/A')}\n"
-                f"LinkedIn: {hm.get('linkedin_url', 'N/A')}\n\n"
-                f"Outreach Draft:\n{hm.get('outreach_draft', 'N/A')}"
-            )
-            children.append(create_text_block(hm_text))
+        if hm:
+            children.append(create_heading_block("Hiring Manager Outreach", 2))
+            hm_parts = []
+            if hm.get("search_url"):
+                hm_parts.append(f"LinkedIn search: {hm['search_url']}")
+            if hm.get("note"):
+                hm_parts.append(hm["note"])
+            if hm.get("outreach_draft"):
+                hm_parts.append(f"\nOutreach Draft:\n{hm['outreach_draft']}")
+            children.append(create_text_block("\n".join(hm_parts)))
+
+    # Application answers (if available)
+    if application_answers:
+        children.append(create_heading_block("Draft Application Answers", 2))
+        question_labels = {
+            "q1": "Why are you interested in this role?",
+            "q2": "Why this company?",
+            "q3": "Describe your most relevant experience",
+            "q4": "What's your biggest weakness/area for growth?",
+            "q5": "What are your salary expectations?",
+        }
+        for key, label in question_labels.items():
+            answer = application_answers.get(key, "")
+            if answer:
+                children.append(create_heading_block(f"Q: {label}", 3))
+                children.append(create_text_block(answer))
+
+    # Tailored CV (if available)
+    if tailored_cv:
+        children.append(create_heading_block("Tailored CV", 2))
+        for chunk_start in range(0, len(tailored_cv), 1900):
+            children.append(create_text_block(tailored_cv[chunk_start:chunk_start + 1900]))
 
     # Create the page
     new_page = client.pages.create(
@@ -235,15 +258,17 @@ def get_existing_urls(token, database_id):
     return existing
 
 
-def write_all_jobs(scoring_result, research_map=None, config_path="config.json"):
+def write_all_jobs(scoring_result, research_map=None, application_answers_map=None, tailored_cvs_map=None, config_path="config.json"):
     """
-    Writes top jobs + near-relevant to Notion, skipping duplicates.
-    research_map: dict of {job_url: research_data}
+    Writes top jobs to Notion, skipping duplicates.
+    Includes application answers and tailored CVs for qualifying jobs.
     """
     config = load_config(config_path)
     client = Client(auth=config["notion"]["token"], notion_version="2022-06-28")
     database_id = config["notion"]["jobs_database_id"]
     research_map = research_map or {}
+    application_answers_map = application_answers_map or {}
+    tailored_cvs_map = tailored_cvs_map or {}
 
     # Fetch existing URLs to prevent duplicates
     existing_urls = get_existing_urls(config["notion"]["token"], database_id)
@@ -258,10 +283,14 @@ def write_all_jobs(scoring_result, research_map=None, config_path="config.json")
             print(f"[notion_writer] Skipped (duplicate): {job.get('title', '')} @ {job.get('company', '')}")
             continue
         research = research_map.get(job_url)
+        answers = application_answers_map.get(job_url)
+        cv = tailored_cvs_map.get(job_url)
         is_fill = job.get("near_relevant_fill", False)
         page_id = write_job_to_notion(
             client, database_id, job, research,
-            near_relevant=is_fill
+            near_relevant=is_fill,
+            application_answers=answers,
+            tailored_cv=cv,
         )
         written.append({"job": f"{job['title']} @ {job['company']}", "page_id": page_id, "type": "top"})
         existing_urls.add(job_url)

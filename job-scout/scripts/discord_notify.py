@@ -43,7 +43,7 @@ def send_webhook(webhook_url, content):
     return True
 
 
-def format_job_entry(job, rank, notion_pages=None):
+def format_job_entry(job, rank, notion_pages=None, has_materials=False):
     """Formats a single job entry for the Discord report."""
     title = job.get("title", "Unknown Role")
     company = job.get("company", "Unknown Company")
@@ -73,6 +73,8 @@ def format_job_entry(job, rank, notion_pages=None):
         f"   ✅ Strongest — {strongest_area}: *{strongest_strategy[:120]}{'...' if len(strongest_strategy) > 120 else ''}*",
         f"   ⚠️  Weakest — {weakest_area}: *{weakest_strategy[:120]}{'...' if len(weakest_strategy) > 120 else ''}*",
     ]
+    if has_materials:
+        lines.append("   📝 Application answers + tailored CV generated")
     if notion_link:
         lines.append(notion_link)
 
@@ -93,7 +95,7 @@ def format_near_relevant_entry(job):
     )
 
 
-def send_daily_report(scoring_result, notion_pages=None, config_path="config.json"):
+def send_daily_report(scoring_result, notion_pages=None, application_answers_map=None, config_path="config.json"):
     """Sends the full daily scouting report to Discord."""
     config = load_config(config_path)
     webhook_url = config["discord"]["webhook_url"]
@@ -122,8 +124,11 @@ def send_daily_report(scoring_result, notion_pages=None, config_path="config.jso
     if top_3:
         lines.append("**TOP MATCHES**")
         lines.append("")
+        app_map = application_answers_map or {}
         for i, job in enumerate(top_3, 1):
-            lines.append(format_job_entry(job, i, notion_pages))
+            job_url = job.get("url", job.get("job_data", {}).get("url", ""))
+            has_mat = job_url in app_map
+            lines.append(format_job_entry(job, i, notion_pages, has_materials=has_mat))
             lines.append("")
 
     # Near-relevant section

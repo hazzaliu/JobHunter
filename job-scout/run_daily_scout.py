@@ -39,6 +39,9 @@ from level_filter import filter_by_level
 from reranker import rerank_jobs
 from scorer import score_all_jobs, get_cost_stats as scorer_cost
 from researcher import research_all_jobs, get_cost_stats as researcher_cost
+from greenhouse_scraper import scrape_greenhouse_jobs
+from application_writer import generate_all_application_answers, get_cost_stats as app_writer_cost
+from cv_tailor import generate_all_cvs, get_cost_stats as cv_tailor_cost
 from notion_writer import write_all_jobs
 from discord_notify import (
     send_daily_report,
@@ -104,7 +107,18 @@ def run():
             return
 
         raw_jobs = scrape_result["jobs"]
-        print(f"      Scraped {len(raw_jobs)} raw jobs.")
+        print(f"      Scraped {len(raw_jobs)} raw jobs from LinkedIn.")
+
+        # ── Step 3b: Greenhouse scraping (supplementary) ───
+        try:
+            if config.get("greenhouse", {}).get("enabled", False):
+                print(f"\n[3b/8] Scraping Greenhouse boards...")
+                gh_result = scrape_greenhouse_jobs(config, strategy)
+                if gh_result["status"] == "ok" and gh_result["jobs"]:
+                    raw_jobs.extend(gh_result["jobs"])
+                    print(f"      Added {len(gh_result['jobs'])} jobs from Greenhouse. Total: {len(raw_jobs)}.")
+        except Exception as e:
+            print(f"      Greenhouse scraping failed (non-fatal): {e}")
 
         # ── Step 4: Deduplicate and filter ───────────────────
         print("\n[4/8] Deduplicating and filtering...")
@@ -202,6 +216,28 @@ def run():
         research_map = research_all_jobs(research_input, strategy_path="strategy.json")
         print(f"      Research complete for {len(research_map)} jobs.")
 
+        # ── Step 7b: Application materials (70+ only) ──────
+        application_answers = {}
+        tailored_cvs = {}
+        qualifying_for_materials = [j for j in top_jobs if j.get("deep_analysis") and j.get("fit_score", 0) >= 70]
+        if qualifying_for_materials:
+            print(f"\n[7b/8] Generating application materials for {len(qualifying_for_materials)} jobs (score >= 70)...")
+            try:
+                application_answers = generate_all_application_answers(
+                    qualifying_for_materials, research_map, strategy_path="strategy.json"
+                )
+            except Exception as e:
+                print(f"      Application answers failed (non-fatal): {e}")
+            try:
+                tailored_cvs = generate_all_cvs(
+                    qualifying_for_materials, research_map, strategy_path="strategy.json"
+                )
+            except Exception as e:
+                print(f"      CV generation failed (non-fatal): {e}")
+            print(f"      Generated {len(application_answers)} answer sets, {len(tailored_cvs)} tailored CVs.")
+        else:
+            print("\n[7b/8] No jobs scoring 70+ — skipping application materials.")
+
         # ── Step 8: Write to Notion ──────────────────────────
         print("\n[8/8] Writing to Notion & sending Discord report...")
 
@@ -214,11 +250,16 @@ def run():
             "all_scored": scored_jobs,
         }
 
-        notion_pages = write_all_jobs(scoring_result, research_map, config_path="config.json")
+        notion_pages = write_all_jobs(
+            scoring_result, research_map,
+            application_answers_map=application_answers,
+            tailored_cvs_map=tailored_cvs,
+            config_path="config.json"
+        )
         print(f"      {len(notion_pages)} pages created in Notion.")
 
         # Send Discord report
-        send_daily_report(scoring_result, notion_pages, config_path="config.json")
+        send_daily_report(scoring_result, notion_pages, application_answers, config_path="config.json")
 
         # ── Commit seen jobs now that pipeline succeeded ─────
         newly_seen = filter_result.get("newly_seen", [])
@@ -242,15 +283,20 @@ def run():
             "cost": {
                 "scorer": scorer_cost(),
                 "researcher": researcher_cost(),
-            }
+                "application_writer": app_writer_cost(),
+                "cv_tailor": cv_tailor_cost(),
+            },
+            "materials_generated": len(application_answers),
         })
 
         # Cost summary
         sc = scorer_cost()
         rc = researcher_cost()
-        total_cost = sc["total_cost_usd"] + rc["total_cost_usd"]
-        total_calls = sc["calls"] + rc["calls"]
-        total_tokens = sc["total_tokens"] + rc["total_tokens"]
+        ac = app_writer_cost()
+        cc = cv_tailor_cost()
+        total_cost = sc["total_cost_usd"] + rc["total_cost_usd"] + ac["total_cost_usd"] + cc["total_cost_usd"]
+        total_calls = sc["calls"] + rc["calls"] + ac["calls"] + cc["calls"]
+        total_tokens = sc["total_tokens"] + rc["total_tokens"] + ac["total_tokens"] + cc["total_tokens"]
 
         print(f"\n{'='*60}")
         print(f"✅ Run complete — {len(scored_jobs)} scored, {len(top_jobs)} surfaced, {len(notion_pages)} Notion entries.")

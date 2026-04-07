@@ -191,16 +191,13 @@ def score_job(job, strategy, prompts_dir="prompts"):
     prompt_a2 = load_prompt("agent2_fit", prompts_dir)
     prompt_a3 = load_prompt("agent3_devils", prompts_dir)
 
-    # Run all 3 agents in parallel
+    # Run agents sequentially (httpx/tokenizer threading issues on macOS)
     print(f"[scorer] Scoring: {job.get('title')} @ {job.get('company')}")
+    client = get_client()
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        f1 = executor.submit(run_agent, client, prompt_a1, job_context, candidate_context)
-        f2 = executor.submit(run_agent, client, prompt_a2, job_context, candidate_context)
-        f3 = executor.submit(run_agent, client, prompt_a3, job_context, candidate_context)
-        response_a1 = f1.result()
-        response_a2 = f2.result()
-        response_a3 = f3.result()
+    response_a1 = run_agent(client, prompt_a1, job_context, candidate_context)
+    response_a2 = run_agent(client, prompt_a2, job_context, candidate_context)
+    response_a3 = run_agent(client, prompt_a3, job_context, candidate_context)
 
     # Parse scores
     score_a1 = parse_score_from_response(response_a1, 33)
@@ -220,36 +217,56 @@ def score_job(job, strategy, prompts_dir="prompts"):
     weakest_area = min(scores, key=scores.get)
 
     # Extract strategy/recommendation from agent response
-    def extract_strategy(response, keyword):
+    def extract_section(response, section_headers):
+        """Extract text from a named section. Tries each header in order."""
         lines = response.split("\n")
-        for i, line in enumerate(lines):
-            if keyword.lower() in line.lower():
-                # Check if content is on the same line after the keyword header
-                after_colon = line.split(":", 1)[-1].strip() if ":" in line else ""
-                if after_colon and len(after_colon) > 10:
-                    return after_colon.lstrip("- ").strip()
-                # Otherwise grab the next non-empty line(s)
-                for j in range(i + 1, min(i + 5, len(lines))):
-                    if lines[j].strip():
-                        return lines[j].strip().lstrip("- ").strip()
-        # Fallback: return last non-empty line
+        for header in section_headers:
+            for i, line in enumerate(lines):
+                line_stripped = line.strip().lower()
+                # Match exact section header (e.g., "STRATEGY:" or "RECOMMEND:")
+                if line_stripped.startswith(header.lower()):
+                    # Content on the same line after the header
+                    after_header = line.split(":", 1)[-1].strip() if ":" in line else ""
+                    if after_header and len(after_header) > 10:
+                        return after_header.lstrip("- ").strip()
+                    # Content on subsequent lines
+                    collected = []
+                    for j in range(i + 1, min(i + 5, len(lines))):
+                        text = lines[j].strip()
+                        if not text:
+                            if collected:
+                                break
+                            continue
+                        # Stop if we hit another section header (ALL CAPS with colon)
+                        if text.endswith(":") and text[:-1].replace(" ", "").isupper():
+                            break
+                        collected.append(text.lstrip("- ").strip())
+                    if collected:
+                        return " ".join(collected)
+        # Fallback: last non-empty line
         for line in reversed(lines):
             if line.strip():
                 return line.strip()
         return ""
 
-    strongest_strategy = extract_strategy(
-        response_a1 if strongest_area == "seniority_culture"
-        else response_a2 if strongest_area == "fit_classifier"
-        else response_a3,
-        "strategy" if strongest_area != "devils_advocate" else "recommend"
-    )
+    agent_response = {
+        "seniority_culture": response_a1,
+        "fit_classifier": response_a2,
+        "devils_advocate": response_a3,
+    }
+    section_headers = {
+        "seniority_culture": ["STRATEGY:"],
+        "fit_classifier": ["STRATEGY:"],
+        "devils_advocate": ["RECOMMEND:"],
+    }
 
-    weakest_strategy = extract_strategy(
-        response_a1 if weakest_area == "seniority_culture"
-        else response_a2 if weakest_area == "fit_classifier"
-        else response_a3,
-        "strategy" if weakest_area != "devils_advocate" else "recommend"
+    strongest_strategy = extract_section(
+        agent_response[strongest_area],
+        section_headers[strongest_area],
+    )
+    weakest_strategy = extract_section(
+        agent_response[weakest_area],
+        section_headers[weakest_area],
     )
 
     result = {

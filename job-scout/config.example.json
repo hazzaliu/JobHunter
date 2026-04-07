@@ -18,6 +18,12 @@
     "channel_name": "job-scout"
   },
 
+  "greenhouse": {
+    "enabled": false,
+    "slugs": {},
+    "location_filter": ["Melbourne", "Australia", "Remote"]
+  },
+
   "schedule": {
     "run_time_local": "08:00",
     "timezone": "Australia/Melbourne"

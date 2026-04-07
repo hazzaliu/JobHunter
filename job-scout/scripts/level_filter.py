@@ -30,16 +30,13 @@ def get_model():
     return os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
 
 
-def check_level_alignment(client, job, candidate_summary):
+def check_level_alignment(client, job, candidate_summary, years_exp=4):
     """
     Ask the LLM one focused question: is this job at the right level?
     Returns: {"aligned": bool, "reason": str, "level": "too_senior"|"right_level"|"too_junior"}
     """
     job_text = f"{job.get('title', '')} at {job.get('company', '')}"
     description = job.get("description", "")[:1500]
-
-    # Experience years from strategy (default 4)
-    years_exp = strategy.get("search_configuration", {}).get("years_experience", 4)
     min_years = max(1, years_exp - 2)
     max_years = years_exp + 2
 
@@ -107,6 +104,8 @@ def filter_by_level(scored_jobs, strategy_path="strategy.json", max_to_check=15)
         f"Key experience:\n{experience_text}"
     )
 
+    years_exp = strategy.get("search_configuration", {}).get("years_experience", 4)
+
     client = get_client()
     jobs_to_check = scored_jobs[:max_to_check]
     remaining = scored_jobs[max_to_check:]
@@ -116,7 +115,7 @@ def filter_by_level(scored_jobs, strategy_path="strategy.json", max_to_check=15)
 
     for job in jobs_to_check:
         job_data = job.get("job_data", job)
-        result = check_level_alignment(client, job_data, candidate_summary)
+        result = check_level_alignment(client, job_data, candidate_summary, years_exp=years_exp)
 
         job["level_check"] = result
 

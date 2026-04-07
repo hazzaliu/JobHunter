@@ -274,7 +274,6 @@ def research_job(job, strategy_path="strategy.json"):
     Full research pipeline for a single job.
     Returns structured research object.
     """
-    client = get_client()
     strategy = load_strategy(strategy_path)
 
     company_name = job.get("company", "")
@@ -284,26 +283,14 @@ def research_job(job, strategy_path="strategy.json"):
     print(f"[researcher] Researching: {job_title} @ {company_name}")
 
     # Fetch website first (needed by company synthesis), then run LLM calls in parallel
+    # Run sequentially (httpx/tokenizer threading issues on macOS)
     website = search_company_website(company_name)
+    client = get_client()
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        f_company = executor.submit(
-            synthesise_company_research, client, company_name, website["content"], job_description
-        )
-        f_role = executor.submit(
-            analyse_role_requirements, client, job_description, job_title
-        )
-        f_hm = executor.submit(
-            find_hiring_manager, client, company_name, job_title
-        )
-        f_iq = executor.submit(
-            generate_interview_questions, client, job_title, job_description, company_name, strategy
-        )
-
-        company_data = f_company.result()
-        role_data = f_role.result()
-        hiring_manager = f_hm.result()
-        interview_questions = f_iq.result()
+    company_data = synthesise_company_research(client, company_name, website["content"], job_description)
+    role_data = analyse_role_requirements(client, job_description, job_title)
+    hiring_manager = find_hiring_manager(client, company_name, job_title)
+    interview_questions = generate_interview_questions(client, job_title, job_description, company_name, strategy)
 
     return {
         "job_url": job.get("url", ""),
@@ -319,19 +306,12 @@ def research_all_jobs(top_jobs, strategy_path="strategy.json"):
     jobs_to_research = [j for j in top_jobs if not j.get("near_relevant_fill")]
     research_map = {}
 
-    def _research_one(job):
+    for job in jobs_to_research:
         try:
-            return job.get("url", ""), research_job(job, strategy_path)
+            research = research_job(job, strategy_path)
+            research_map[job.get("url", "")] = research
         except Exception as e:
             print(f"[researcher] Error researching {job.get('title')}: {e}", file=sys.stderr)
-            return job.get("url", ""), None
-
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        results = executor.map(_research_one, jobs_to_research)
-
-    for url, research in results:
-        if research:
-            research_map[url] = research
 
     return research_map
 
