@@ -12,8 +12,14 @@ Pipeline:
   7. Write all entries to Notion
   8. Send Discord report
   9. Log run outcome
+
+Modes:
+  python run_daily_scout.py              # full daily run
+  python run_daily_scout.py --validate   # preflight only (env, config, strategy, CV) — no external calls
+  python run_daily_scout.py --dry-run    # full pipeline minus Notion writes, Discord sends, seen-jobs commit
 """
 
+import argparse
 import json
 import os
 import sys
@@ -51,6 +57,15 @@ from discord_notify import (
 from feedback import run_feedback
 
 
+REQUIRED_ENV_VARS = [
+    "OPENROUTER_API_KEY",
+    "APIFY_API_TOKEN",
+    "NOTION_TOKEN",
+    "NOTION_DATABASE_ID",
+    "DISCORD_WEBHOOK_URL",
+]
+
+
 def log_run(status, details, logs_dir="logs"):
     os.makedirs(logs_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -66,9 +81,103 @@ def log_run(status, details, logs_dir="logs"):
     return log_entry
 
 
-def run():
+def validate_setup():
+    """
+    Preflight check: no API calls, no scraping, no writes.
+    Verifies env vars, config/strategy files, private_docs, and profile embedding build.
+    Returns True if everything is in order, False otherwise.
+    """
     print(f"\n{'='*60}")
-    print(f"JOB SCOUT — Daily Run — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print("JOB SCOUT — Preflight validation")
+    print(f"{'='*60}\n")
+
+    ok = True
+
+    print("[1/5] Checking required environment variables...")
+    missing = [k for k in REQUIRED_ENV_VARS if not os.environ.get(k)]
+    if missing:
+        print(f"      ❌ Missing: {', '.join(missing)}")
+        print(f"         Copy .env.example to .env and fill these in.")
+        ok = False
+    else:
+        print(f"      ✅ All {len(REQUIRED_ENV_VARS)} env vars present.")
+
+    print("\n[2/5] Checking config.json...")
+    if not os.path.exists("config.json"):
+        print("      ❌ config.json not found. Copy config.example.json to config.json.")
+        ok = False
+    else:
+        try:
+            with open("config.json") as f:
+                json.load(f)
+            print("      ✅ config.json is valid JSON.")
+        except json.JSONDecodeError as e:
+            print(f"      ❌ config.json is invalid JSON: {e}")
+            ok = False
+
+    print("\n[3/5] Checking strategy.json...")
+    if not os.path.exists("strategy.json"):
+        print("      ❌ strategy.json not found. Copy strategy.example.json to strategy.json.")
+        ok = False
+    else:
+        try:
+            with open("strategy.json") as f:
+                strategy = json.load(f)
+            search_terms = strategy.get("search_configuration", {}).get("search_terms", [])
+            if not search_terms:
+                print("      ⚠️  strategy.json has no search_configuration.search_terms. Pipeline will scrape nothing.")
+                ok = False
+            elif not strategy.get("positioning_statement"):
+                print("      ⚠️  strategy.json is missing positioning_statement — scoring will be weak.")
+            else:
+                print(f"      ✅ strategy.json valid ({len(search_terms)} search terms).")
+        except json.JSONDecodeError as e:
+            print(f"      ❌ strategy.json is invalid JSON: {e}")
+            ok = False
+
+    print("\n[4/5] Checking private_docs/ for CV...")
+    pd = "private_docs"
+    if not os.path.isdir(pd):
+        print(f"      ❌ {pd}/ not found. Create it and drop your resume PDF in.")
+        ok = False
+    else:
+        pdfs = [f for f in os.listdir(pd) if f.lower().endswith(".pdf")]
+        cv_pdfs = [f for f in pdfs if "resume" in f.lower() or "cv" in f.lower()]
+        if not cv_pdfs:
+            print(f"      ❌ No CV/resume PDF in {pd}/ (filename must contain 'resume' or 'cv').")
+            ok = False
+        else:
+            print(f"      ✅ Found CV: {cv_pdfs[0]}")
+
+    if not ok:
+        print("\n❌ Validation failed. Fix the issues above before running the pipeline.\n")
+        return False
+
+    print("\n[5/5] Building profile embedding (this may download the model on first run)...")
+    try:
+        from embedder import load_or_create_profile_embedding
+        embedding, profile_text = load_or_create_profile_embedding(
+            private_docs_dir="private_docs",
+            strategy_path="strategy.json",
+            embeddings_dir="embeddings",
+        )
+        print(f"      ✅ Profile embedding built ({len(profile_text)} chars, {len(embedding)} dims).")
+    except Exception as e:
+        print(f"      ❌ Profile embedding failed: {e}")
+        return False
+
+    print(f"\n{'='*60}")
+    print("✅ Preflight validation passed. Ready for a real run.")
+    print(f"{'='*60}\n")
+    return True
+
+
+def run(dry_run=False):
+    mode_label = "DRY RUN" if dry_run else "Daily Run"
+    print(f"\n{'='*60}")
+    print(f"JOB SCOUT — {mode_label} — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    if dry_run:
+        print("(dry-run: Notion writes, Discord sends, seen-jobs commits all skipped)")
     print(f"{'='*60}\n")
 
     try:
@@ -102,7 +211,10 @@ def run():
 
         if scrape_result["status"] == "no_results":
             print("      No results returned from Apify.")
-            send_no_new_jobs("config.json")
+            if not dry_run:
+                send_no_new_jobs("config.json")
+            else:
+                print("      [dry-run] Would send 'no new jobs' Discord message.")
             log_run("no_results", {"scraped": 0, "qualified": 0})
             return
 
@@ -126,7 +238,10 @@ def run():
 
         if filter_result["status"] == "all_duplicate":
             print("      All results are duplicates.")
-            send_no_new_jobs("config.json")
+            if not dry_run:
+                send_no_new_jobs("config.json")
+            else:
+                print("      [dry-run] Would send 'no new jobs' Discord message.")
             log_run("all_duplicate", {
                 "scraped": len(raw_jobs),
                 "qualified": 0,
@@ -139,7 +254,10 @@ def run():
 
         if not eligible_jobs:
             print("      No eligible jobs after filtering.")
-            send_no_new_jobs("config.json")
+            if not dry_run:
+                send_no_new_jobs("config.json")
+            else:
+                print("      [dry-run] Would send 'no new jobs' Discord message.")
             log_run("no_eligible", {
                 "scraped": len(raw_jobs),
                 "qualified": 0,
@@ -239,7 +357,10 @@ def run():
             print("\n[7b/8] No jobs scoring 70+ — skipping application materials.")
 
         # ── Step 8: Write to Notion ──────────────────────────
-        print("\n[8/8] Writing to Notion & sending Discord report...")
+        if dry_run:
+            print("\n[8/8] [dry-run] Skipping Notion writes, Discord report, and seen-jobs commit.")
+        else:
+            print("\n[8/8] Writing to Notion & sending Discord report...")
 
         # Build scoring_result in the format notion_writer and discord_notify expect
         scoring_result = {
@@ -250,24 +371,33 @@ def run():
             "all_scored": scored_jobs,
         }
 
-        notion_pages = write_all_jobs(
-            scoring_result, research_map,
-            application_answers_map=application_answers,
-            tailored_cvs_map=tailored_cvs,
-            config_path="config.json"
-        )
-        print(f"      {len(notion_pages)} pages created in Notion.")
+        if not dry_run:
+            notion_pages = write_all_jobs(
+                scoring_result, research_map,
+                application_answers_map=application_answers,
+                tailored_cvs_map=tailored_cvs,
+                config_path="config.json"
+            )
+            print(f"      {len(notion_pages)} pages created in Notion.")
 
-        # Send Discord report
-        send_daily_report(scoring_result, notion_pages, application_answers, config_path="config.json")
+            # Send Discord report
+            send_daily_report(scoring_result, notion_pages, application_answers, config_path="config.json")
+        else:
+            notion_pages = []
+            print(f"      [dry-run] Would create {len(top_jobs)} Notion pages and send Discord report.")
+            print(f"      [dry-run] Top jobs:")
+            for i, job in enumerate(top_jobs, 1):
+                print(f"        {i}. {job.get('fit_score', 0):.0f}/100 — {job.get('title', '')} @ {job.get('company', '')}")
 
         # ── Commit seen jobs now that pipeline succeeded ─────
         newly_seen = filter_result.get("newly_seen", [])
-        if newly_seen:
+        if newly_seen and not dry_run:
             existing_seen = load_seen_jobs("seen_jobs.json")
             existing_seen.extend(newly_seen)
             save_seen_jobs(existing_seen, "seen_jobs.json")
             print(f"      Committed {len(newly_seen)} jobs to seen_jobs.json")
+        elif newly_seen and dry_run:
+            print(f"      [dry-run] Would commit {len(newly_seen)} jobs to seen_jobs.json")
 
         # ── Log success ──────────────────────────────────────
         log_entry = log_run("success", {
@@ -299,7 +429,8 @@ def run():
         total_tokens = sc["total_tokens"] + rc["total_tokens"] + ac["total_tokens"] + cc["total_tokens"]
 
         print(f"\n{'='*60}")
-        print(f"✅ Run complete — {len(scored_jobs)} scored, {len(top_jobs)} surfaced, {len(notion_pages)} Notion entries.")
+        entry_suffix = f", {len(notion_pages)} Notion entries" if not dry_run else " (dry-run: no Notion writes)"
+        print(f"✅ Run complete — {len(scored_jobs)} scored, {len(top_jobs)} surfaced{entry_suffix}.")
         print(f"💰 Cost: ${total_cost:.3f} USD | {total_calls} API calls | {total_tokens:,} tokens")
         print(f"{'='*60}\n")
 
@@ -307,14 +438,37 @@ def run():
         error_msg = f"Unexpected error during daily run:\n{traceback.format_exc()}"
         print(f"\n❌ ERROR: {error_msg}", file=sys.stderr)
 
-        try:
-            send_error_alert(str(e), config_path="config.json")
-        except Exception:
-            pass
+        if not dry_run:
+            try:
+                send_error_alert(str(e), config_path="config.json")
+            except Exception:
+                pass
 
         log_run("error", {"error": str(e), "traceback": traceback.format_exc()})
         sys.exit(1)
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Job Scout daily pipeline.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--validate",
+        action="store_true",
+        help="Preflight only — check env vars, config, strategy, CV, and profile embedding. No external calls.",
+    )
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run full pipeline but skip Notion writes, Discord sends, and seen-jobs commit.",
+    )
+    args = parser.parse_args()
+
+    if args.validate:
+        ok = validate_setup()
+        sys.exit(0 if ok else 1)
+
+    run(dry_run=args.dry_run)
+
+
 if __name__ == "__main__":
-    run()
+    main()

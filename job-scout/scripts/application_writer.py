@@ -15,6 +15,8 @@ from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from docx_writer import application_answers_to_docx
+
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"), override=True)
 
 HAIKU_MODEL = "anthropic/claude-haiku-4.5"
@@ -181,9 +183,18 @@ def generate_all_application_answers(qualifying_jobs, research_map, strategy_pat
                 # Save locally
                 company_slug = job.get("company", "unknown").lower().replace(" ", "_")[:20]
                 date_str = datetime.now().strftime("%Y-%m-%d")
+                job_label = f"{job.get('title', '')} @ {job.get('company', '')}"
                 filepath = f"output_docs/answers_{company_slug}_{date_str}.json"
                 with open(filepath, "w") as f:
-                    json.dump({"job": f"{job.get('title', '')} @ {job.get('company', '')}", "answers": answers}, f, indent=2)
+                    json.dump({"job": job_label, "answers": answers}, f, indent=2)
+
+                # Also write a Word version for direct use in applications
+                try:
+                    docx_path = filepath.replace(".json", ".docx")
+                    application_answers_to_docx(job_label, answers, docx_path)
+                    print(f"[application_writer] Saved: {docx_path}")
+                except Exception as docx_err:
+                    print(f"[application_writer] .docx export failed (non-fatal): {docx_err}", file=sys.stderr)
 
         except Exception as e:
             print(f"[application_writer] Error for {job.get('title', '')}: {e}", file=sys.stderr)
