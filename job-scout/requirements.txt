@@ -8,3 +8,4 @@ pdfplumber>=0.10.0
 numpy>=1.24.0
 flashrank>=0.2.10
 ddgs>=7.0.0
+python-docx>=1.1.0

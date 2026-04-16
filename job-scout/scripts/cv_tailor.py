@@ -16,6 +16,8 @@ from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from docx_writer import markdown_cv_to_docx
+
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"), override=True)
 
 _cost_tracker = {"total_tokens": 0, "total_cost_usd": 0.0, "calls": 0}
@@ -190,6 +192,14 @@ def generate_all_cvs(qualifying_jobs, research_map, strategy_path="strategy.json
                 with open(filepath, "w") as f:
                     f.write(cv_markdown)
                 print(f"[cv_tailor] Saved: {filepath}")
+
+                # Also write a Word version for direct use in applications
+                try:
+                    docx_path = filepath.replace(".md", ".docx")
+                    markdown_cv_to_docx(cv_markdown, docx_path)
+                    print(f"[cv_tailor] Saved: {docx_path}")
+                except Exception as docx_err:
+                    print(f"[cv_tailor] .docx export failed (non-fatal): {docx_err}", file=sys.stderr)
 
         except Exception as e:
             print(f"[cv_tailor] Error for {job.get('title', '')}: {e}", file=sys.stderr)

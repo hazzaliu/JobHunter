@@ -54,7 +54,23 @@ Three LLM agents evaluate each job independently, then scores are summed:
 ```bash
 git clone https://github.com/YOUR_USERNAME/JobHunter.git
 cd JobHunter/job-scout
+bash scripts/setup.sh
+```
+
+The setup script creates a virtualenv, installs dependencies, copies
+`.env.example` / `config.example.json` / `strategy.example.json` into place
+(only if they don't already exist), and creates the runtime directories
+(`private_docs/`, `embeddings/`, `logs/`, `output_docs/`).
+
+If you'd rather do it by hand:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
+cp config.example.json config.json
+cp strategy.example.json strategy.json
+mkdir -p private_docs embeddings logs output_docs
 ```
 
 ### 2. Configure API keys
@@ -130,8 +146,27 @@ Then share the database with your Notion integration (click "..." → "Connect t
 
 ### 7. Run it
 
+Before burning any credits, run the preflight validator — it checks
+your `.env`, `config.json`, `strategy.json`, and that a CV is present
+in `private_docs/`, then builds the profile embedding. No API calls,
+no scraping, no Notion / Discord writes:
+
 ```bash
-cd job-scout
+python run_daily_scout.py --validate
+```
+
+Next, try a dry run — full pipeline including Apify and LLM calls,
+but no Notion writes, no Discord sends, and no `seen_jobs.json` commit.
+Outputs still land in `output_docs/` so you can inspect the generated
+CVs and application answers:
+
+```bash
+python run_daily_scout.py --dry-run
+```
+
+Once you're happy with the output, kick off a real run:
+
+```bash
 python run_daily_scout.py
 ```
 
@@ -140,6 +175,7 @@ First run will:
 - Download the reranker model (~34MB, cached)
 - Build your profile embedding from CV + strategy
 - Scrape, score, analyse, and deliver results
+- Write a markdown CV **and** a matching `.docx` to `output_docs/` for each job that scores 70+
 
 ### 8. Schedule daily runs (optional)
 
